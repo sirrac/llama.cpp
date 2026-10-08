@@ -217,6 +217,26 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     set_tests_properties(test-recurrent-state-rollback PROPERTIES
         FIXTURES_REQUIRED generate-models
     )
+
+    llama_build_and_test(test-residency.cpp)
+
+    llama_test(
+        test-residency
+        NAME test-residency-models
+        LABEL main
+        ARGS
+            "${MODEL_DIR}/qwen3moe-moe.gguf"
+            "${MODEL_DIR}/olmoe-moe.gguf"
+            "${MODEL_DIR}/qwen2moe-moe.gguf"
+            "${MODEL_DIR}/deepseek2-moe.gguf"
+            "${MODEL_DIR}/arctic-moe.gguf"
+            "${MODEL_DIR}/grovemoe-moe.gguf"
+            "${MODEL_DIR}/gpt-oss-moe.gguf"
+            "${MODEL_DIR}/llama-dense.gguf"
+    )
+    set_tests_properties(test-residency-models PROPERTIES
+        FIXTURES_REQUIRED generate-models
+    )
 endif()
 
 llama_build_and_test(test-chat-peg-parser.cpp peg-parser/simple-tokenize.cpp)
