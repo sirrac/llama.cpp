@@ -81,6 +81,7 @@ struct llama_model_loader {
     bool use_mmap = false;
     bool use_direct_io = false;
     bool use_adaptive = false;
+    bool is_numa = false;
     bool check_tensors;
     bool no_alloc;
 
@@ -106,6 +107,16 @@ struct llama_model_loader {
     size_t size_done = 0;
     size_t size_data = 0;
     std::vector<std::pair<size_t, size_t>> mmaps_used;
+
+    // file ranges of tensors served directly from the mmap, collected for LLAMA_LOAD_MODE_ADAPTIVE
+    struct llama_residency_range {
+        uint16_t idx;
+        size_t   first;
+        size_t   last;
+        llama_residency residency;
+    };
+    std::vector<llama_residency_range> residency_ranges;
+    size_t residency_size_copied = 0; // bytes of tensors copied out of the mmap (repacked, offloaded)
 
     // define a comparator for the buft -> ctx map to ensure that the order is well-defined:
     struct ggml_backend_buft_comparator {
@@ -207,4 +218,8 @@ struct llama_model_loader {
     std::string ftype_name() const;
 
     void print_info() const;
+
+private:
+    // pin hot ranges and mark cold ranges with MADV_COLD
+    void apply_residency_policy();
 };

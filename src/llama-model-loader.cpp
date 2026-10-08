@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
@@ -1358,6 +1359,7 @@ void llama_model_loader::init_mappings(bool prefetch, llama_mlocks * mlock_mmaps
                     is_numa = is_numa_fn();
                 }
             }
+            this->is_numa = is_numa;
 
             std::unique_ptr<llama_mmap> mapping = std::make_unique<llama_mmap>(file.get(), prefetch ? -1 : 0, is_numa);
             mmaps_used.emplace_back(mapping->size(), 0);
@@ -1571,8 +1573,13 @@ bool llama_model_loader::load_all_data(
                 auto & mmap_used = mmaps_used[weight->idx];
                 mmap_used.first  = std::min(mmap_used.first,  weight->offs);
                 mmap_used.second = std::max(mmap_used.second, weight->offs + n_size);
+
+                if (use_adaptive) {
+                    residency_ranges.push_back({weight->idx, weight->offs, weight->offs + n_size, weight->residency});
+                }
             } else {
                 ggml_backend_tensor_set(cur, data, 0, n_size);
+                residency_size_copied += n_size;
             }
         } else {
             const auto & file = files.at(weight->idx);
@@ -1690,6 +1697,9 @@ bool llama_model_loader::load_all_data(
                 }
             }
         }
+        if (use_adaptive) {
+            apply_residency_policy();
+        }
         if (progress_callback) {
             // Even though the model is done loading, we still honor
             // cancellation since we need to free allocations.
@@ -1698,6 +1708,80 @@ bool llama_model_loader::load_all_data(
     }
 
     return true;
+}
+
+void llama_model_loader::apply_residency_policy() {
+    const size_t page = llama_page_size();
+
+    size_t size_hot  = 0;
+    size_t size_cold = 0;
+    for (const auto & r : residency_ranges) {
+        (r.residency == LLAMA_RESIDENCY_HOT ? size_hot : size_cold) += r.last - r.first;
+    }
+
+    std::sort(residency_ranges.begin(), residency_ranges.end(), [](const llama_residency_range & a, const llama_residency_range & b) {
+        return a.idx != b.idx ? a.idx < b.idx : a.first < b.first;
+    });
+
+    // merge neighbors of the same class to reduce the number of syscalls and VMA splits
+    std::vector<llama_residency_range> merged;
+    for (const auto & r : residency_ranges) {
+        if (!merged.empty()) {
+            auto & m = merged.back();
+            if (m.idx == r.idx && m.residency == r.residency && r.first < m.last + page) {
+                m.last = std::max(m.last, r.last);
+                continue;
+            }
+        }
+        merged.push_back(r);
+    }
+    residency_ranges.clear();
+    residency_ranges.shrink_to_fit();
+
+    size_t size_locked   = 0;
+    bool lock_failed     = false;
+    bool populate_failed = false;
+    bool cold_failed     = false;
+    for (const auto & r : merged) {
+        const auto & mapping = mappings.at(r.idx);
+        uint8_t * base = (uint8_t *) mapping->addr();
+        size_t first = r.first;
+        size_t last  = r.last;
+
+        if (r.residency == LLAMA_RESIDENCY_HOT) {
+            if (is_numa) {
+                // like mmap, let the compute threads first-touch the pages so they spread across nodes
+                continue;
+            }
+            llama_page_range_outer(first, last, page, mapping->size());
+            if (!lock_failed) {
+                if (llama_residency_lock(base + first, last - first)) {
+                    size_locked += last - first;
+                    continue;
+                }
+                lock_failed = true;
+                LLAMA_LOG_WARN("%s: failed to mlock hot tensors after %zu bytes: %s - populating the rest without pinning, try increasing RLIMIT_MEMLOCK ('ulimit -l')\n",
+                        __func__, size_locked, strerror(errno));
+            }
+            if (!llama_residency_populate(base + first, last - first) && !populate_failed) {
+                populate_failed = true;
+                LLAMA_LOG_WARN("%s: failed to populate hot tensors: %s\n", __func__, strerror(errno));
+            }
+        } else {
+            llama_page_range_inner(first, last, page);
+            if (last == first) {
+                continue;
+            }
+            // note: MADV_COLD only deactivates pages that are already mapped, it leaves no lasting hint
+            if (!llama_residency_cold(base + first, last - first) && errno != ENOSYS && !cold_failed) {
+                cold_failed = true;
+                LLAMA_LOG_WARN("%s: failed to mark cold tensors with MADV_COLD: %s\n", __func__, strerror(errno));
+            }
+        }
+    }
+
+    LLAMA_LOG_INFO("%s: adaptive: hot %.2f MiB (%.2f MiB locked), cold %.2f MiB, %.2f MiB copied out of mmap\n", __func__,
+            size_hot / 1024.0 / 1024.0, size_locked / 1024.0 / 1024.0, size_cold / 1024.0 / 1024.0, residency_size_copied / 1024.0 / 1024.0);
 }
 
 std::string llama_model_loader::ftype_name() const {
