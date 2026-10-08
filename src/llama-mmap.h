@@ -72,3 +72,11 @@ private:
 };
 
 size_t llama_path_max();
+
+// page residency helpers for LLAMA_LOAD_MODE_ADAPTIVE, addr must be page aligned
+// return false and set errno on failure or if unsupported on this platform
+bool llama_residency_supported();
+size_t llama_page_size();
+bool llama_residency_lock    (void * addr, size_t len); // mlock
+bool llama_residency_populate(void * addr, size_t len); // prefault without pinning
+bool llama_residency_cold    (void * addr, size_t len); // MADV_COLD

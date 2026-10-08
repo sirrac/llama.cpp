@@ -777,3 +777,70 @@ const bool llama_mlock::SUPPORTED = false;
 size_t llama_path_max() {
     return PATH_MAX;
 }
+
+bool llama_residency_supported() {
+#if defined(_POSIX_MAPPED_FILES)
+    return true;
+#else
+    return false;
+#endif
+}
+
+size_t llama_page_size() {
+#if defined(_WIN32)
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (size_t) si.dwPageSize;
+#elif defined(_POSIX_MAPPED_FILES)
+    return (size_t) sysconf(_SC_PAGESIZE);
+#else
+    return 4096;
+#endif
+}
+
+bool llama_residency_lock(void * addr, size_t len) {
+#ifdef _POSIX_MEMLOCK_RANGE
+    return mlock(addr, len) == 0;
+#else
+    GGML_UNUSED(addr);
+    GGML_UNUSED(len);
+    errno = ENOSYS;
+    return false;
+#endif
+}
+
+bool llama_residency_populate(void * addr, size_t len) {
+#ifdef _POSIX_MAPPED_FILES
+#ifdef MADV_POPULATE_READ
+    if (madvise(addr, len, MADV_POPULATE_READ) == 0) {
+        return true;
+    }
+    if (errno != EINVAL) {
+        return false;
+    }
+    // EINVAL: kernel older than 5.14, fall back to asynchronous readahead
+#endif
+    const int err = posix_madvise(addr, len, POSIX_MADV_WILLNEED);
+    if (err != 0) {
+        errno = err;
+        return false;
+    }
+    return true;
+#else
+    GGML_UNUSED(addr);
+    GGML_UNUSED(len);
+    errno = ENOSYS;
+    return false;
+#endif
+}
+
+bool llama_residency_cold(void * addr, size_t len) {
+#if defined(_POSIX_MAPPED_FILES) && defined(MADV_COLD)
+    return madvise(addr, len, MADV_COLD) == 0;
+#else
+    GGML_UNUSED(addr);
+    GGML_UNUSED(len);
+    errno = ENOSYS;
+    return false;
+#endif
+}
