@@ -542,8 +542,9 @@ llama_model_loader::llama_model_loader(
 
     tensor_buft_overrides = param_tensor_buft_overrides_p;
 
-    this->use_mmap      = load_mode == LLAMA_LOAD_MODE_MMAP || load_mode == LLAMA_LOAD_MODE_MLOCK;
+    this->use_mmap      = load_mode == LLAMA_LOAD_MODE_MMAP || load_mode == LLAMA_LOAD_MODE_MLOCK || load_mode == LLAMA_LOAD_MODE_ADAPTIVE;
     this->use_direct_io = load_mode == LLAMA_LOAD_MODE_DIRECT_IO;
+    this->use_adaptive  = load_mode == LLAMA_LOAD_MODE_ADAPTIVE;
 
     if (!fname.empty()) {
         // Load the main GGUF
@@ -807,7 +808,13 @@ llama_model_loader::llama_model_loader(
 
     if (this->use_mmap && !llama_mmap::SUPPORTED) {
         LLAMA_LOG_WARN("%s: mmap is not supported on this platform\n", __func__);
-        this->use_mmap = false;
+        this->use_mmap     = false;
+        this->use_adaptive = false;
+    }
+
+    if (this->use_adaptive && !llama_residency_supported()) {
+        LLAMA_LOG_WARN("%s: adaptive load mode is not supported on this platform, using mmap\n", __func__);
+        this->use_adaptive = false;
     }
 
     this->check_tensors = check_tensors;
@@ -1191,6 +1198,16 @@ struct ggml_tensor * llama_model_loader::create_tensor(
                 throw std::runtime_error("no CPU backend found");
             }
             buft = ggml_backend_dev_buffer_type(cpu_dev);
+        }
+
+        if (use_adaptive && llama_residency_classify(info) == LLAMA_RESIDENCY_COLD) {
+            if (auto it = weights_map.find(tn.str()); it != weights_map.end()) {
+                it->second.residency = LLAMA_RESIDENCY_COLD;
+            }
+            // keep cold tensors in the mmap instead of copying them into a CPU extra buffer (e.g. repack)
+            if (buft_dev && ggml_backend_dev_type(buft_dev) == GGML_BACKEND_DEVICE_TYPE_CPU) {
+                buft = ggml_backend_dev_buffer_type(buft_dev);
+            }
         }
 
         if (buft != buft_list->front().second) {

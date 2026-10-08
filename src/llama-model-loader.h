@@ -6,6 +6,7 @@
 #include "llama-arch.h"
 #include "llama-hparams.h"
 #include "llama-mmap.h"
+#include "llama-residency.h"
 
 #include "ggml-cpp.h"
 
@@ -35,6 +36,8 @@ struct llama_model_loader {
         size_t   offs; // tensor data offset in the original file
 
         ggml_tensor * tensor;
+
+        llama_residency residency = LLAMA_RESIDENCY_HOT; // only used with LLAMA_LOAD_MODE_ADAPTIVE
 
         llama_tensor_weight(const llama_file * file, uint16_t idx, const struct gguf_context * gguf_ctx, ggml_tensor * tensor) : idx(idx), tensor(tensor) {
             const int tensor_idx = gguf_find_tensor(gguf_ctx,  ggml_get_name(tensor));
@@ -77,6 +80,7 @@ struct llama_model_loader {
 
     bool use_mmap = false;
     bool use_direct_io = false;
+    bool use_adaptive = false;
     bool check_tensors;
     bool no_alloc;
 
