@@ -1,0 +1,12 @@
+{
+  "load_time_ms": null,
+  "ttft_ms": null,
+  "prompt_tokens_per_sec": null,
+  "eval_tokens_per_sec": null,
+  "peak_rss_mb": 250.38,
+  "major_faults": 64721,
+  "minor_faults": 621493,
+  "total_wall_time_s": 35.955,
+  "load_mode": "mmap",
+  "memory_limit_mb": 250
+}

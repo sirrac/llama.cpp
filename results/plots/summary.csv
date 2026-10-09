@@ -1,0 +1,7 @@
+model,state,mode,runs,successful,failed,median_ttft_ms,median_load_ms,median_wall_s,median_eval_tps,median_major_faults,median_max_rss_mib,median_hot_resident_mib,median_cold_resident_mib,median_cold_total_mib
+qwen2_5-0_5b-instruct-q4_k_m,cold,adaptive,5,5,0,1226.796,927.771,1.72,80.72,50.0,939.93359375,462.96484375,0.0,0.0
+qwen2_5-0_5b-instruct-q4_k_m,cold,mlock,5,5,0,1260.005,895.864,1.72,84.58,2.0,940.14453125,462.96484375,0.0,0.0
+qwen2_5-0_5b-instruct-q4_k_m,cold,mmap,5,5,0,1273.6480000000001,921.037,1.73,79.01,3.0,939.9140625,462.96484375,0.0,0.0
+qwen2_5-0_5b-instruct-q4_k_m,cold,none,5,5,0,1607.5919999999999,1182.869,2.15,81.98,0.0,914.26171875,462.96484375,0.0,0.0
+qwen2_5-0_5b-instruct-q4_k_m,warm,adaptive,3,3,0,864.4340000000001,563.0469999999999,1.31,83.16,0.0,940.0234375,462.96484375,0.0,0.0
+qwen2_5-0_5b-instruct-q4_k_m,warm,mmap,3,3,0,922.96,572.1569999999999,1.37,81.22,2.0,940.3515625,462.96484375,0.0,0.0

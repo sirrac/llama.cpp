@@ -1,0 +1,8 @@
+{
+  "peak_rss_mb": 587.29,
+  "major_faults": 49512,
+  "minor_faults": 318919,
+  "total_wall_time_s": 11.502,
+  "load_mode": "mmap",
+  "memory_limit_mb": 400
+}
